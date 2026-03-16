@@ -35,9 +35,10 @@ app.use(
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "x-csrf-token"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-csrf-token"],
   }),
 );
+app.options("*", cors());
 
 /* ---------------- ROUTES ---------------- */
 
