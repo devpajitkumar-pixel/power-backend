@@ -27,37 +27,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-app.set("trust proxy", 1);
-
-const allowedOrigins = [
-  "http://localhost:3000",
-  "https://power-frontend-production.up.railway.app",
-];
-
 app.use(
   cors({
-    origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
-    },
+    origin: [
+      "http://localhost:3000",
+      "https://power-frontend-production.up.railway.app",
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-csrf-token"],
   }),
 );
 
-app.options(
-  "*",
-  cors({
-    origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
-    },
-    credentials: true,
-  }),
-);
+app.options(/.*/, cors());
 
 /* ---------------- ROUTES ---------------- */
 
