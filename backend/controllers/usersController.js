@@ -10,17 +10,20 @@ const generateToken = (res, userId) => {
   });
 
   res.cookie("jwt", token, {
-    httpOnly: true, // JS can't access
-    secure: true, // true in production (HTTPS)
-    sameSite: "none", // important for frontend
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
+
 const generateRole = (res, role) => {
   res.cookie("role", role, {
-    httpOnly: true, // JS can't access
-    secure: true, // true in production (HTTPS)
-    sameSite: "none", // important for frontend
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
