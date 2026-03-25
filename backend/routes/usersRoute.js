@@ -5,13 +5,25 @@ import {
   registerUser,
   getUserProfile,
   userLogout,
+  getAuditors,
+  updateUser,
+  deleteUser,
 } from "../controllers/usersController.js";
 
 const router = express.Router();
 
+// 🔐 Auth
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-router.get("/profile", protect, getUserProfile);
 router.post("/logout", protect, userLogout);
+
+// 👤 Profile
+router.get("/profile", protect, getUserProfile);
+
+// 👥 Users
+router.get("/auditors", protect, getAuditors);
+
+// ✏️ Edit + Delete (NEW)
+router.route("/:id").put(protect, updateUser).delete(protect, deleteUser);
 
 export default router;

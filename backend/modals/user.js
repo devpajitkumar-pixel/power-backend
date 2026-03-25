@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
     email: {
       type: String,
       required: true,
@@ -15,37 +16,64 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/.+\@.+\..+/, "Please enter a valid email address"],
     },
+
     password: {
       type: String,
       minLength: 6,
     },
+
     role: {
       type: String,
       required: true,
       enum: ["admin", "auditor"],
       default: "auditor",
     },
+
+    phone: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
     status: {
       type: String,
       required: true,
       enum: ["active", "inactive"],
       default: "active",
     },
+
+    // 🔐 Auth Providers
     googleId: {
       type: String,
       default: null,
     },
+
     authProvider: {
       type: String,
       enum: ["local", "google"],
       default: "local",
     },
+
+    // 📸 Selfie Verification
+    latestSelfieUrl: {
+      type: String,
+      default: null,
+    },
+
+    lastSelfieAt: {
+      type: Date,
+      default: null,
+    },
   },
-  { timestamps: true },
+  {
+    timestamps: {
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
 );
 
-//password hash middleware
-
+// 🔐 Password Hash Middleware
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
 
@@ -53,8 +81,7 @@ userSchema.pre("save", async function () {
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-//Match user entered password to hashed password
-
+// 🔑 Match Password Method
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
