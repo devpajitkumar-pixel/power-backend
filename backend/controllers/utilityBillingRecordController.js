@@ -4,6 +4,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // helper: admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -138,6 +140,30 @@ const createUtilityBillingRecord = asyncHandler(async (req, res) => {
     audit_date: audit_date || undefined,
     auditor_id: auditor_id || undefined,
     documents: uploadedDocuments,
+  });
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "utility_billing",
+    entity_id: billingRecord._id,
+    entity_name: billingRecord.bill_no || "Billing Record",
+    facility_id: utility.facility_id,
+    utility_account_id: billingRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "utility billing record",
+      entityName: billingRecord.bill_no || "",
+    }),
+    meta: {
+      units_kWh: billingRecord.units_kWh,
+      units_kVAh: billingRecord.units_kVAh,
+      mdi_kVA: billingRecord.mdi_kVA,
+      monthly_electricity_bill_rs: billingRecord.monthly_electricity_bill_rs,
+      billing_period_start: billingRecord.billing_period_start,
+      billing_period_end: billingRecord.billing_period_end,
+    },
   });
 
   res.status(201).json({
@@ -285,6 +311,7 @@ const updateUtilityBillingRecord = asyncHandler(async (req, res) => {
     }
   }
 
+  const updatedFields = Object.keys(req.body || {});
   const uploadedDocuments = await uploadBillingDocuments(req.files);
 
   billingRecord.billing_period_start =
@@ -342,9 +369,36 @@ const updateUtilityBillingRecord = asyncHandler(async (req, res) => {
       ...(billingRecord.documents || []),
       ...uploadedDocuments,
     ];
+    updatedFields.push("documents");
   }
 
   const updatedBillingRecord = await billingRecord.save();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "utility_billing",
+    entity_id: updatedBillingRecord._id,
+    entity_name: updatedBillingRecord.bill_no || "Billing Record",
+    facility_id: utility.facility_id,
+    utility_account_id: updatedBillingRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "utility billing record",
+      entityName: updatedBillingRecord.bill_no || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      units_kWh: updatedBillingRecord.units_kWh,
+      units_kVAh: updatedBillingRecord.units_kVAh,
+      mdi_kVA: updatedBillingRecord.mdi_kVA,
+      monthly_electricity_bill_rs:
+        updatedBillingRecord.monthly_electricity_bill_rs,
+      billing_period_start: updatedBillingRecord.billing_period_start,
+      billing_period_end: updatedBillingRecord.billing_period_end,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -374,7 +428,41 @@ const deleteUtilityBillingRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName = billingRecord.bill_no || "Billing Record";
+  const facilityId = utility.facility_id;
+  const utilityId = billingRecord.utility_account_id;
+  const unitsKWh = billingRecord.units_kWh;
+  const unitsKVAh = billingRecord.units_kVAh;
+  const mdiKVA = billingRecord.mdi_kVA;
+  const monthlyBill = billingRecord.monthly_electricity_bill_rs;
+  const billingStart = billingRecord.billing_period_start;
+  const billingEnd = billingRecord.billing_period_end;
+
   await billingRecord.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "utility_billing",
+    entity_id: billingRecord._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "utility billing record",
+      entityName,
+    }),
+    meta: {
+      units_kWh: unitsKWh,
+      units_kVAh: unitsKVAh,
+      mdi_kVA: mdiKVA,
+      monthly_electricity_bill_rs: monthlyBill,
+      billing_period_start: billingStart,
+      billing_period_end: billingEnd,
+    },
+  });
 
   res.status(200).json({
     success: true,

@@ -4,6 +4,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -66,7 +68,6 @@ const coercePrimitive = (value) => {
   if (trimmed === "false") return false;
   if (trimmed === "null") return null;
 
-  // keep date strings / text as-is unless it's a pure number
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
     return Number(trimmed);
   }
@@ -92,8 +93,6 @@ const parseJSONField = (value, fallback) => {
 };
 
 // ✅ Build nested object from bracket-notation keys in multipart body
-// Example:
-// documents_records_to_collect[single_line_diagram_electrical][available] = "true"
 const extractBracketNotationObject = (body, rootKey) => {
   const result = {};
   const prefix = `${rootKey}[`;
@@ -330,6 +329,32 @@ const createHVACAudit = asyncHandler(async (req, res) => {
     documents: uploadedDocuments,
   });
 
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "hvac_audit",
+    entity_id: hvacAudit._id,
+    entity_name:
+      pre_audit_information?.facility_name ||
+      pre_audit_information?.location_address ||
+      "HVAC Audit",
+    facility_id: hvacAudit.facility_id,
+    utility_account_id: hvacAudit.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "HVAC audit",
+      entityName:
+        pre_audit_information?.facility_name ||
+        pre_audit_information?.location_address ||
+        "",
+    }),
+    meta: {
+      audit_date: hvacAudit.audit_date,
+      equipment_count: hvacAudit.hvac_equipment_register?.length || 0,
+    },
+  });
+
   res.status(201).json({
     success: true,
     message: "HVAC audit created successfully",
@@ -479,6 +504,7 @@ const updateHVACAudit = asyncHandler(async (req, res) => {
     throw new Error("utility_account_id does not belong to the given facility");
   }
 
+  const updatedFields = Object.keys(req.body || {});
   const uploadedDocuments = await uploadHVACDocuments(req.files || []);
   const normalized = normalizeHVACAuditPayload(req.body);
 
@@ -562,9 +588,36 @@ const updateHVACAudit = asyncHandler(async (req, res) => {
       ...(hvacAudit.documents || []),
       ...uploadedDocuments,
     ];
+    updatedFields.push("documents");
   }
 
   const updatedHVACAudit = await hvacAudit.save();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "hvac_audit",
+    entity_id: updatedHVACAudit._id,
+    entity_name:
+      updatedHVACAudit.pre_audit_information?.facility_name ||
+      updatedHVACAudit.pre_audit_information?.location_address ||
+      "HVAC Audit",
+    facility_id: updatedHVACAudit.facility_id,
+    utility_account_id: updatedHVACAudit.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "HVAC audit",
+      entityName:
+        updatedHVACAudit.pre_audit_information?.facility_name ||
+        updatedHVACAudit.pre_audit_information?.location_address ||
+        "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      audit_date: updatedHVACAudit.audit_date,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -594,7 +647,30 @@ const deleteHVACAudit = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName =
+    hvacAudit.pre_audit_information?.facility_name ||
+    hvacAudit.pre_audit_information?.location_address ||
+    "HVAC Audit";
+  const facilityId = hvacAudit.facility_id;
+  const utilityId = hvacAudit.utility_account_id;
+
   await hvacAudit.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "hvac_audit",
+    entity_id: hvacAudit._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "HVAC audit",
+      entityName,
+    }),
+  });
 
   res.status(200).json({
     success: true,

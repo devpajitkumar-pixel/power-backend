@@ -5,6 +5,9 @@ import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
+
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
 
@@ -125,6 +128,27 @@ const createTransformer = asyncHandler(async (req, res) => {
     audit_date,
     auditor_id,
     documents: uploadedDocuments,
+  });
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "transformer",
+    entity_id: transformer._id,
+    entity_name: transformer.transformer_tag,
+    facility_id: transformer.facility_id,
+    utility_account_id: transformer.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "transformer",
+      entityName: transformer.transformer_tag,
+    }),
+    meta: {
+      rated_capacity_kVA: transformer.rated_capacity_kVA,
+      type_of_cooling: transformer.type_of_cooling,
+    },
   });
 
   res.status(201).json({
@@ -294,6 +318,7 @@ const updateTransformer = asyncHandler(async (req, res) => {
     }
   }
 
+  const updatedFields = Object.keys(req.body || {});
   const uploadedDocuments = await uploadTransformerDocuments(req.files);
 
   Object.keys(req.body).forEach((key) => {
@@ -305,9 +330,31 @@ const updateTransformer = asyncHandler(async (req, res) => {
       ...(transformer.documents || []),
       ...uploadedDocuments,
     ];
+    updatedFields.push("documents");
   }
 
   const updatedTransformer = await transformer.save();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "transformer",
+    entity_id: updatedTransformer._id,
+    entity_name: updatedTransformer.transformer_tag,
+    facility_id: updatedTransformer.facility_id,
+    utility_account_id: updatedTransformer.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "transformer",
+      entityName: updatedTransformer.transformer_tag,
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      rated_capacity_kVA: updatedTransformer.rated_capacity_kVA,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -337,7 +384,32 @@ const deleteTransformer = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName = transformer.transformer_tag;
+  const facilityId = transformer.facility_id;
+  const utilityId = transformer.utility_account_id;
+  const ratedCapacity = transformer.rated_capacity_kVA;
+
   await transformer.deleteOne();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "transformer",
+    entity_id: transformer._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "transformer",
+      entityName,
+    }),
+    meta: {
+      rated_capacity_kVA: ratedCapacity,
+    },
+  });
 
   res.status(200).json({
     success: true,

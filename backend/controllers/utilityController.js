@@ -4,6 +4,9 @@ import FacilityAuditor from "../modals/facilityAuditor.js";
 import UtilityAccount from "../modals/utilityAccount.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
+
 // helper: admin check
 const isAdmin = (user) => user?.role === "admin";
 
@@ -54,9 +57,7 @@ const getAccessibleFacility = async (user, facilityId) => {
   });
 };
 
-// @route POST /api/v1/utilities
-// @desc Create Utility Account
-// @access Protected
+// @route POST
 const createUtilityAccount = asyncHandler(async (req, res) => {
   const {
     facility_id,
@@ -127,6 +128,27 @@ const createUtilityAccount = asyncHandler(async (req, res) => {
     documents: uploadedDocuments,
   });
 
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "utility_account",
+    entity_id: utilityAccount._id,
+    entity_name: utilityAccount.account_number,
+    facility_id: utilityAccount.facility_id,
+    utility_account_id: utilityAccount._id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "utility account",
+      entityName: utilityAccount.account_number,
+    }),
+    meta: {
+      connection_type: utilityAccount.connection_type,
+      provider: utilityAccount.provider,
+    },
+  });
+
   res.status(201).json({
     success: true,
     message: "Utility account created successfully",
@@ -134,9 +156,7 @@ const createUtilityAccount = asyncHandler(async (req, res) => {
   });
 });
 
-// @route GET /api/v1/utilities
-// @desc Get all Utility Accounts
-// @access Protected
+// GET ALL (unchanged)
 const getUtilityAccounts = asyncHandler(async (req, res) => {
   const { facility_id } = req.query;
 
@@ -183,9 +203,7 @@ const getUtilityAccounts = asyncHandler(async (req, res) => {
   });
 });
 
-// @route GET /api/v1/utilities/:id
-// @desc Get single Utility Account
-// @access Protected
+// GET SINGLE (unchanged)
 const getUtilityAccountById = asyncHandler(async (req, res) => {
   const utilityAccount = await UtilityAccount.findById(req.params.id)
     .populate("facility_id", "name city address owner_user_id")
@@ -212,9 +230,7 @@ const getUtilityAccountById = asyncHandler(async (req, res) => {
   });
 });
 
-// @route PUT /api/v1/utilities/:id
-// @desc Update Utility Account
-// @access Protected
+// UPDATE
 const updateUtilityAccount = asyncHandler(async (req, res) => {
   const {
     account_number,
@@ -267,6 +283,8 @@ const updateUtilityAccount = asyncHandler(async (req, res) => {
   }
 
   const uploadedDocuments = await uploadUtilityDocuments(req.files);
+
+  const updatedFields = Object.keys(req.body || {});
 
   utilityAccount.account_number =
     account_number !== undefined
@@ -321,9 +339,31 @@ const updateUtilityAccount = asyncHandler(async (req, res) => {
       ...(utilityAccount.documents || []),
       ...uploadedDocuments,
     ];
+    updatedFields.push("documents");
   }
 
   const updatedUtilityAccount = await utilityAccount.save();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "utility_account",
+    entity_id: updatedUtilityAccount._id,
+    entity_name: updatedUtilityAccount.account_number,
+    facility_id: updatedUtilityAccount.facility_id,
+    utility_account_id: updatedUtilityAccount._id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "utility account",
+      entityName: updatedUtilityAccount.account_number,
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      connection_type: updatedUtilityAccount.connection_type,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -332,9 +372,7 @@ const updateUtilityAccount = asyncHandler(async (req, res) => {
   });
 });
 
-// @route DELETE /api/v1/utilities/:id
-// @desc Delete Utility Account
-// @access Protected
+// DELETE
 const deleteUtilityAccount = asyncHandler(async (req, res) => {
   const utilityAccount = await UtilityAccount.findById(req.params.id);
 
@@ -353,7 +391,27 @@ const deleteUtilityAccount = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName = utilityAccount.account_number;
+  const facilityId = utilityAccount.facility_id;
+
   await utilityAccount.deleteOne();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "utility_account",
+    entity_id: utilityAccount._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityAccount._id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "utility account",
+      entityName,
+    }),
+  });
 
   res.status(200).json({
     success: true,

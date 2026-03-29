@@ -6,6 +6,9 @@ import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
+
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
 
@@ -92,7 +95,7 @@ const calculateNetValues = (data) => {
 };
 
 //
-// 🚀 CREATE SOLAR GENERATION RECORD
+// 🚀 CREATE
 //
 const createSolarGenerationRecord = asyncHandler(async (req, res) => {
   const {
@@ -206,6 +209,29 @@ const createSolarGenerationRecord = asyncHandler(async (req, res) => {
     documents: uploadedDocuments,
   });
 
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "solar_generation",
+    entity_id: solarGenerationRecord._id,
+    entity_name: solarPlant.plant_name || "Solar Generation",
+    facility_id: solarGenerationRecord.facility_id,
+    utility_account_id: solarGenerationRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "solar generation record",
+      entityName: solarPlant.plant_name || "",
+    }),
+    meta: {
+      solar_generation_kWh: solarGenerationRecord.solar_generation_kWh,
+      net_kWh: solarGenerationRecord.net_kWh,
+      billing_period_start,
+      billing_period_end,
+    },
+  });
+
   res.status(201).json({
     success: true,
     message: "Solar generation record created successfully",
@@ -214,7 +240,7 @@ const createSolarGenerationRecord = asyncHandler(async (req, res) => {
 });
 
 //
-// 📥 GET ALL SOLAR GENERATION RECORDS
+// 📥 GET ALL (UNCHANGED)
 //
 const getSolarGenerationRecords = asyncHandler(async (req, res) => {
   const { facility_id, utility_account_id, solar_plant_id } = req.query;
@@ -277,7 +303,7 @@ const getSolarGenerationRecords = asyncHandler(async (req, res) => {
 });
 
 //
-// 📄 GET SINGLE SOLAR GENERATION RECORD
+// 📄 GET SINGLE (UNCHANGED)
 //
 const getSolarGenerationRecordById = asyncHandler(async (req, res) => {
   const solarGenerationRecord = await SolarGenerationRecord.findById(
@@ -310,7 +336,7 @@ const getSolarGenerationRecordById = asyncHandler(async (req, res) => {
 });
 
 //
-// ✏️ UPDATE SOLAR GENERATION RECORD
+// ✏️ UPDATE
 //
 const updateSolarGenerationRecord = asyncHandler(async (req, res) => {
   const solarGenerationRecord = await SolarGenerationRecord.findById(
@@ -398,6 +424,7 @@ const updateSolarGenerationRecord = asyncHandler(async (req, res) => {
     );
   }
 
+  const updatedFields = Object.keys(req.body || {});
   const uploadedDocuments = await uploadSolarGenerationDocuments(req.files);
 
   Object.keys(req.body).forEach((key) => {
@@ -422,9 +449,32 @@ const updateSolarGenerationRecord = asyncHandler(async (req, res) => {
       ...(solarGenerationRecord.documents || []),
       ...uploadedDocuments,
     ];
+    updatedFields.push("documents");
   }
 
   const updated = await solarGenerationRecord.save();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "solar_generation",
+    entity_id: updated._id,
+    entity_name: targetSolarPlant?.plant_name || "Solar Generation",
+    facility_id: updated.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "solar generation record",
+      entityName: targetSolarPlant?.plant_name || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      solar_generation_kWh: updated.solar_generation_kWh,
+      net_kWh: updated.net_kWh,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -434,7 +484,7 @@ const updateSolarGenerationRecord = asyncHandler(async (req, res) => {
 });
 
 //
-// ❌ DELETE SOLAR GENERATION RECORD
+// ❌ DELETE
 //
 const deleteSolarGenerationRecord = asyncHandler(async (req, res) => {
   const solarGenerationRecord = await SolarGenerationRecord.findById(
@@ -456,7 +506,34 @@ const deleteSolarGenerationRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const solarPlant = await SolarPlant.findById(
+    solarGenerationRecord.solar_plant_id,
+  );
+
+  const meta = {
+    solar_generation_kWh: solarGenerationRecord.solar_generation_kWh,
+    net_kWh: solarGenerationRecord.net_kWh,
+  };
+
   await solarGenerationRecord.deleteOne();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "solar_generation",
+    entity_id: solarGenerationRecord._id,
+    entity_name: solarPlant?.plant_name || "Solar Generation",
+    facility_id: solarGenerationRecord.facility_id,
+    utility_account_id: solarGenerationRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "solar generation record",
+      entityName: solarPlant?.plant_name || "",
+    }),
+    meta,
+  });
 
   res.status(200).json({
     success: true,

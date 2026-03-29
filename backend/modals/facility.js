@@ -70,6 +70,10 @@ const facilitySchema = new mongoose.Schema(
       ref: "User",
     },
 
+    closure_date: {
+      type: Date,
+    },
+
     // 📂 Documents (Images / PDFs)
     documents: [
       {

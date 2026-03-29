@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const fanAuditRecordSchema = new mongoose.Schema(
   {
+    facility_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Facility",
+      required: true,
+    },
+
     utility_account_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "UtilityAccount",
@@ -76,14 +82,14 @@ const fanAuditRecordSchema = new mongoose.Schema(
 
     condition: {
       type: String,
-      enum: ["good", "moderate", "poor"],
+      enum: ["good", "old", "inefficient"],
     },
 
     remarks: {
       type: String,
       trim: true,
     },
-    // 🔍 Audit metadata (recommended)
+
     audit_date: {
       type: Date,
       default: Date.now,
@@ -93,7 +99,7 @@ const fanAuditRecordSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
-    // 📂 Documents (fan images, measurement proof, reports)
+
     documents: [
       {
         fileUrl: {
@@ -123,10 +129,12 @@ const fanAuditRecordSchema = new mongoose.Schema(
   },
 );
 
-// 🔍 Indexes
+fanAuditRecordSchema.index({ facility_id: 1 });
 fanAuditRecordSchema.index({ utility_account_id: 1 });
 fanAuditRecordSchema.index({ created_at: -1 });
 
-const FanAuditRecord = mongoose.model("FanAuditRecord", fanAuditRecordSchema);
+const FanAuditRecord =
+  mongoose.models.FanAuditRecord ||
+  mongoose.model("FanAuditRecord", fanAuditRecordSchema);
 
 export default FanAuditRecord;

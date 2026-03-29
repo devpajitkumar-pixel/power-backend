@@ -5,6 +5,9 @@ import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
+
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
 
@@ -111,6 +114,28 @@ const createUtilityTariff = asyncHandler(async (req, res) => {
     auditor_id,
 
     documents: uploadedDocuments,
+  });
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "utility_tariff",
+    entity_id: tariff._id,
+    entity_name: `Tariff from ${tariff.effective_from}`,
+    facility_id: utility.facility_id,
+    utility_account_id: tariff.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "utility tariff",
+      entityName: `from ${tariff.effective_from}`,
+    }),
+    meta: {
+      effective_from: tariff.effective_from,
+      effective_to: tariff.effective_to,
+      basic_energy_charges_rs_per_unit: tariff.basic_energy_charges_rs_per_unit,
+    },
   });
 
   res.status(201).json({
@@ -227,15 +252,38 @@ const updateUtilityTariff = asyncHandler(async (req, res) => {
 
   const uploadedDocuments = await uploadTariffDocuments(req.files);
 
+  const updatedFields = Object.keys(req.body || {});
+
   Object.keys(req.body).forEach((key) => {
     tariff[key] = req.body[key] ?? tariff[key];
   });
 
   if (uploadedDocuments.length > 0) {
     tariff.documents = [...(tariff.documents || []), ...uploadedDocuments];
+    updatedFields.push("documents");
   }
 
   const updated = await tariff.save();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "utility_tariff",
+    entity_id: updated._id,
+    entity_name: `Tariff from ${updated.effective_from}`,
+    facility_id: utility.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "utility tariff",
+      entityName: `from ${updated.effective_from}`,
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -265,7 +313,27 @@ const deleteUtilityTariff = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName = `Tariff from ${tariff.effective_from}`;
+  const facilityId = utility.facility_id;
+
   await tariff.deleteOne();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "utility_tariff",
+    entity_id: tariff._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: tariff.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "utility tariff",
+      entityName,
+    }),
+  });
 
   res.status(200).json({
     success: true,

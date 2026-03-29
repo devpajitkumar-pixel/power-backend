@@ -2,6 +2,8 @@ import asyncHandler from "../middlewares/asyncHandler.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // helper: parse auditor ids safely
 const parseAuditorIds = (auditor_ids) => {
@@ -57,6 +59,7 @@ const createFacility = asyncHandler(async (req, res) => {
     client_email,
     facility_type,
     status,
+    closure_date,
     auditor_ids,
   } = req.body;
 
@@ -79,6 +82,7 @@ const createFacility = asyncHandler(async (req, res) => {
     client_email,
     facility_type,
     status,
+    closure_date,
     documents: uploadedDocuments,
   });
 
@@ -90,7 +94,40 @@ const createFacility = asyncHandler(async (req, res) => {
     }));
 
     await FacilityAuditor.insertMany(facilityAuditorDocs, { ordered: false });
+
+    await createRecentActivity({
+      actor: req.user,
+      action: "assigned",
+      entity_type: "facility",
+      entity_id: facility._id,
+      entity_name: facility.name,
+      facility_id: facility._id,
+      message: `${req.user?.name || "User"} assigned auditors to facility "${facility.name}"`,
+      meta: {
+        auditor_ids: parsedAuditorIds,
+      },
+    });
   }
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "facility",
+    entity_id: facility._id,
+    entity_name: facility.name,
+    facility_id: facility._id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "facility",
+      entityName: facility.name,
+    }),
+    meta: {
+      city: facility.city,
+      facility_type: facility.facility_type,
+      assigned_auditors_count: parsedAuditorIds.length,
+    },
+  });
 
   res.status(201).json({
     success: true,
@@ -187,14 +224,33 @@ const updateFacility = asyncHandler(async (req, res) => {
     client_email,
     facility_type,
     status,
+    closure_date,
     auditor_ids,
   } = req.body;
 
-  const query = isAdmin(req.user)
-    ? { _id: req.params.id }
-    : { _id: req.params.id, owner_user_id: req.user._id };
+  let facility;
 
-  const facility = await Facility.findOne(query);
+  if (isAdmin(req.user)) {
+    facility = await Facility.findById(req.params.id);
+  } else {
+    const ownedFacility = await Facility.findOne({
+      _id: req.params.id,
+      owner_user_id: req.user._id,
+    });
+
+    if (ownedFacility) {
+      facility = ownedFacility;
+    } else {
+      const assignment = await FacilityAuditor.findOne({
+        facility_id: req.params.id,
+        user_id: req.user._id,
+      });
+
+      if (assignment) {
+        facility = await Facility.findById(req.params.id);
+      }
+    }
+  }
 
   if (!facility) {
     res.status(404);
@@ -203,6 +259,7 @@ const updateFacility = asyncHandler(async (req, res) => {
 
   const parsedAuditorIds = parseAuditorIds(auditor_ids);
   const uploadedDocuments = await uploadFacilityDocuments(req.files);
+  const updatedFields = Object.keys(req.body || {});
 
   facility.name = name ?? facility.name;
   facility.city = city ?? facility.city;
@@ -214,9 +271,11 @@ const updateFacility = asyncHandler(async (req, res) => {
   facility.client_email = client_email ?? facility.client_email;
   facility.facility_type = facility_type ?? facility.facility_type;
   facility.status = status ?? facility.status;
+  facility.closure_date = closure_date ?? facility.closure_date;
 
   if (uploadedDocuments.length > 0) {
     facility.documents = [...(facility.documents || []), ...uploadedDocuments];
+    updatedFields.push("documents");
   }
 
   const updatedFacility = await facility.save();
@@ -233,11 +292,43 @@ const updateFacility = asyncHandler(async (req, res) => {
 
       await FacilityAuditor.insertMany(facilityAuditorDocs, { ordered: false });
     }
+
+    await createRecentActivity({
+      actor: req.user,
+      action: "assigned",
+      entity_type: "facility",
+      entity_id: facility._id,
+      entity_name: facility.name,
+      facility_id: facility._id,
+      message: `${req.user?.name || "User"} updated auditors for facility "${facility.name}"`,
+      meta: {
+        auditor_ids: parsedAuditorIds,
+      },
+    });
   }
 
   const assignedAuditors = await FacilityAuditor.find({
     facility_id: facility._id,
   }).select("user_id assigned_by createdAt");
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "facility",
+    entity_id: updatedFacility._id,
+    entity_name: updatedFacility.name,
+    facility_id: updatedFacility._id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "facility",
+      entityName: updatedFacility.name,
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      status: updatedFacility.status,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -264,8 +355,29 @@ const deleteFacility = asyncHandler(async (req, res) => {
     throw new Error("Facility not found");
   }
 
+  const name = facility.name;
+  const city = facility.city;
+
   await FacilityAuditor.deleteMany({ facility_id: facility._id });
   await facility.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "facility",
+    entity_id: facility._id,
+    entity_name: name,
+    facility_id: facility._id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "facility",
+      entityName: name,
+    }),
+    meta: {
+      city,
+    },
+  });
 
   res.status(200).json({
     success: true,

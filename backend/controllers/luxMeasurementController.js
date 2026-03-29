@@ -4,6 +4,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -76,15 +78,15 @@ const computeValues = (data) => {
   const p3 = Number(data.measured_lux_point_3);
   const requiredLux = Number(data.required_lux);
 
-  const validPoints = [p1, p2, p3].filter((value) => !isNaN(value));
+  const validPoints = [p1, p2, p3].filter((value) => !Number.isNaN(value));
 
   if (validPoints.length > 0) {
     data.average_lux =
       validPoints.reduce((sum, value) => sum + value, 0) / validPoints.length;
   }
 
-  if (!isNaN(requiredLux) && !isNaN(data.average_lux)) {
-    data.compliance = data.average_lux >= requiredLux;
+  if (!Number.isNaN(requiredLux) && !Number.isNaN(Number(data.average_lux))) {
+    data.compliance = Number(data.average_lux) >= requiredLux;
   }
 
   return data;
@@ -136,6 +138,28 @@ const createLuxMeasurement = asyncHandler(async (req, res) => {
     documents: docs,
   });
 
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "lux_measurement",
+    entity_id: record._id,
+    entity_name:
+      record.area_location || record.task_description || "Lux Measurement",
+    facility_id: record.facility_id,
+    utility_account_id: record.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "lux measurement",
+      entityName: record.area_location || record.task_description || "",
+    }),
+    meta: {
+      required_lux: record.required_lux,
+      average_lux: record.average_lux,
+      compliance: record.compliance,
+    },
+  });
+
   res.status(201).json({
     success: true,
     data: record,
@@ -148,7 +172,7 @@ const createLuxMeasurement = asyncHandler(async (req, res) => {
 const getLuxMeasurements = asyncHandler(async (req, res) => {
   const { facility_id, utility_account_id } = req.query;
 
-  let query = {};
+  const query = {};
 
   if (facility_id) query.facility_id = facility_id;
   if (utility_account_id) query.utility_account_id = utility_account_id;
@@ -292,6 +316,8 @@ const updateLuxMeasurement = asyncHandler(async (req, res) => {
     }
   }
 
+  const updatedFields = Object.keys(req.body || {});
+
   let payload = { ...record.toObject(), ...req.body };
   payload = computeValues(payload);
 
@@ -301,9 +327,32 @@ const updateLuxMeasurement = asyncHandler(async (req, res) => {
 
   if (docs.length > 0) {
     record.documents.push(...docs);
+    updatedFields.push("documents");
   }
 
   const updated = await record.save();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "lux_measurement",
+    entity_id: updated._id,
+    entity_name:
+      updated.area_location || updated.task_description || "Lux Measurement",
+    facility_id: updated.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "lux measurement",
+      entityName: updated.area_location || updated.task_description || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      average_lux: updated.average_lux,
+      compliance: updated.compliance,
+    },
+  });
 
   res.json({
     success: true,
@@ -332,7 +381,28 @@ const deleteLuxMeasurement = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName =
+    record.area_location || record.task_description || "Lux Measurement";
+  const facilityId = record.facility_id;
+  const utilityId = record.utility_account_id;
+
   await record.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "lux_measurement",
+    entity_id: record._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "lux measurement",
+      entityName,
+    }),
+  });
 
   res.json({
     success: true,

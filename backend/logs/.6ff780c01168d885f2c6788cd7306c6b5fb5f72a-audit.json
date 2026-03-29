@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "C:\\Users\\Dell\\Desktop\\PowerAuditApi\\backend\\logs\\.6ff780c01168d885f2c6788cd7306c6b5fb5f72a-audit.json",
+    "files": [
+        {
+            "date": 1774789203966,
+            "name": "C:\\Users\\Dell\\Desktop\\PowerAuditApi\\backend\\logs\\error-2026-03-29.log",
+            "hash": "bf564c0fd2333ca8109366f8e42532a342a787a38cfe01048ccfb952db3abd64"
+        },
+        {
+            "date": 1774809303002,
+            "name": "C:\\Users\\Dell\\Desktop\\PowerAuditApi\\backend\\logs\\error-2026-03-30.log",
+            "hash": "bb1d32471d3486ff1b3d3eb47232344cdb5f610e54f672bbb69768983ae2949f"
+        }
+    ],
+    "hashType": "sha256"
+}

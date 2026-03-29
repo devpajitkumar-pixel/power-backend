@@ -4,6 +4,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -121,6 +123,26 @@ const createDGSet = asyncHandler(async (req, res) => {
     audit_date,
     auditor_id,
     documents: uploadedDocuments,
+  });
+  // ✅ Recent Activity
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "dg_set",
+    entity_id: dgSet._id,
+    entity_name: dgSet.dg_number,
+    facility_id: dgSet.facility_id,
+    utility_account_id: dgSet.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "DG set",
+      entityName: dgSet.dg_number,
+    }),
+    meta: {
+      make_model: dgSet.make_model,
+      rated_capacity_kVA: dgSet.rated_capacity_kVA,
+    },
   });
 
   res.status(201).json({
@@ -300,6 +322,26 @@ const updateDGSet = asyncHandler(async (req, res) => {
 
   const updated = await dgSet.save();
 
+  // ✅ Recent Activity
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "dg_set",
+    entity_id: updated._id,
+    entity_name: updated.dg_number,
+    facility_id: updated.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "DG set",
+      entityName: updated.dg_number,
+    }),
+    meta: {
+      updated_fields: Object.keys(req.body || {}),
+    },
+  });
+
   res.status(200).json({
     success: true,
     message: "DG set updated successfully",
@@ -328,7 +370,29 @@ const deleteDGSet = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  // store before delete
+  const name = dgSet.dg_number;
+  const facilityId = dgSet.facility_id;
+  const utilityId = dgSet.utility_account_id;
+
   await dgSet.deleteOne();
+
+  // ✅ Recent Activity
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "dg_set",
+    entity_id: dgSet._id,
+    entity_name: name,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "DG set",
+      entityName: name,
+    }),
+  });
 
   res.status(200).json({
     success: true,

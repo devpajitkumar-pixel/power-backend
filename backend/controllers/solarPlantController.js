@@ -5,6 +5,9 @@ import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
+
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
 
@@ -107,6 +110,28 @@ const createSolarPlant = asyncHandler(async (req, res) => {
     documents: uploadedDocuments,
   });
 
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "solar_plant",
+    entity_id: solarPlant._id,
+    entity_name: solarPlant.plant_name || "Solar Plant",
+    facility_id: solarPlant.facility_id,
+    utility_account_id: solarPlant.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "solar plant",
+      entityName: solarPlant.plant_name || "",
+    }),
+    meta: {
+      rating_kWp: solarPlant.rating_kWp,
+      no_of_panels: solarPlant.no_of_panels,
+      inverter_rating_kW: solarPlant.inverter_rating_kW,
+    },
+  });
+
   res.status(201).json({
     success: true,
     message: "Solar plant created successfully",
@@ -115,7 +140,7 @@ const createSolarPlant = asyncHandler(async (req, res) => {
 });
 
 //
-// 📥 GET ALL SOLAR PLANTS
+// 📥 GET ALL (UNCHANGED)
 //
 const getSolarPlants = asyncHandler(async (req, res) => {
   const { facility_id, utility_account_id } = req.query;
@@ -177,7 +202,7 @@ const getSolarPlants = asyncHandler(async (req, res) => {
 });
 
 //
-// 📄 GET SINGLE SOLAR PLANT
+// 📄 GET SINGLE (UNCHANGED)
 //
 const getSolarPlantById = asyncHandler(async (req, res) => {
   const solarPlant = await SolarPlant.findById(req.params.id)
@@ -207,7 +232,7 @@ const getSolarPlantById = asyncHandler(async (req, res) => {
 });
 
 //
-// ✏️ UPDATE SOLAR PLANT
+// ✏️ UPDATE
 //
 const updateSolarPlant = asyncHandler(async (req, res) => {
   const solarPlant = await SolarPlant.findById(req.params.id);
@@ -249,6 +274,7 @@ const updateSolarPlant = asyncHandler(async (req, res) => {
     }
   }
 
+  const updatedFields = Object.keys(req.body || {});
   const uploadedDocuments = await uploadSolarPlantDocuments(req.files);
 
   Object.keys(req.body).forEach((key) => {
@@ -260,9 +286,33 @@ const updateSolarPlant = asyncHandler(async (req, res) => {
       ...(solarPlant.documents || []),
       ...uploadedDocuments,
     ];
+    updatedFields.push("documents");
   }
 
   const updated = await solarPlant.save();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "solar_plant",
+    entity_id: updated._id,
+    entity_name: updated.plant_name || "Solar Plant",
+    facility_id: updated.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "solar plant",
+      entityName: updated.plant_name || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      rating_kWp: updated.rating_kWp,
+      no_of_panels: updated.no_of_panels,
+      inverter_rating_kW: updated.inverter_rating_kW,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -272,7 +322,7 @@ const updateSolarPlant = asyncHandler(async (req, res) => {
 });
 
 //
-// ❌ DELETE SOLAR PLANT
+// ❌ DELETE
 //
 const deleteSolarPlant = asyncHandler(async (req, res) => {
   const solarPlant = await SolarPlant.findById(req.params.id);
@@ -292,7 +342,32 @@ const deleteSolarPlant = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName = solarPlant.plant_name || "Solar Plant";
+  const facilityId = solarPlant.facility_id;
+  const utilityId = solarPlant.utility_account_id;
+  const rating = solarPlant.rating_kWp;
+
   await solarPlant.deleteOne();
+
+  // ✅ ACTIVITY
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "solar_plant",
+    entity_id: solarPlant._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "solar plant",
+      entityName,
+    }),
+    meta: {
+      rating_kWp: rating,
+    },
+  });
 
   res.status(200).json({
     success: true,

@@ -4,6 +4,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -54,6 +56,7 @@ const getAccessibleUtilityAccount = async (user, utilityId) => {
   if (isAdmin(user)) return utility;
 
   const facility = await Facility.findById(utility.facility_id);
+  if (!facility) return null;
 
   const assigned = await FacilityAuditor.exists({
     facility_id: facility._id,
@@ -74,11 +77,16 @@ const computeValues = (data) => {
   const hours = Number(data.working_hours_per_day);
   const days = Number(data.working_days_per_year);
 
-  if (!isNaN(wattage) && !isNaN(qty)) {
+  if (!Number.isNaN(wattage) && !Number.isNaN(qty)) {
     data.connected_load_kW = (wattage * qty) / 1000;
   }
 
-  if (!isNaN(wattage) && !isNaN(qty) && !isNaN(hours) && !isNaN(days)) {
+  if (
+    !Number.isNaN(wattage) &&
+    !Number.isNaN(qty) &&
+    !Number.isNaN(hours) &&
+    !Number.isNaN(days)
+  ) {
     data.annual_energy_kWh = ((wattage * qty) / 1000) * hours * days;
   }
 
@@ -96,14 +104,12 @@ const createLightingAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("facility_id & utility_account_id required");
   }
 
-  // 🔒 Facility access
   const facility = await getAccessibleFacility(req.user, facility_id);
   if (!facility) {
     res.status(403);
     throw new Error("No access to facility");
   }
 
-  // 🔒 Utility access
   const utility = await getAccessibleUtilityAccount(
     req.user,
     utility_account_id,
@@ -114,7 +120,6 @@ const createLightingAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("No access to utility");
   }
 
-  // ⚠️ IMPORTANT VALIDATION
   if (utility.facility_id.toString() !== facility_id) {
     res.status(400);
     throw new Error("Utility does not belong to selected facility");
@@ -130,6 +135,29 @@ const createLightingAuditRecord = asyncHandler(async (req, res) => {
     documents: docs,
   });
 
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "lighting_audit",
+    entity_id: record._id,
+    entity_name:
+      record.area_location || record.fixture_type || "Lighting Audit",
+    facility_id: record.facility_id,
+    utility_account_id: record.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "lighting audit",
+      entityName: record.area_location || record.fixture_type || "",
+    }),
+    meta: {
+      fixture_type: record.fixture_type,
+      lamp_type: record.lamp_type,
+      quantity_nos: record.quantity_nos,
+      connected_load_kW: record.connected_load_kW,
+    },
+  });
+
   res.status(201).json({
     success: true,
     data: record,
@@ -142,7 +170,7 @@ const createLightingAuditRecord = asyncHandler(async (req, res) => {
 const getLightingAuditRecords = asyncHandler(async (req, res) => {
   const { facility_id, utility_account_id } = req.query;
 
-  let query = {};
+  const query = {};
 
   if (facility_id) query.facility_id = facility_id;
   if (utility_account_id) query.utility_account_id = utility_account_id;
@@ -234,6 +262,38 @@ const updateLightingAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const nextFacilityId = req.body.facility_id || record.facility_id?.toString();
+  const nextUtilityId =
+    req.body.utility_account_id || record.utility_account_id?.toString();
+
+  if (!nextFacilityId || !nextUtilityId) {
+    res.status(400);
+    throw new Error("facility_id & utility_account_id required");
+  }
+
+  const facility = await getAccessibleFacility(req.user, nextFacilityId);
+  if (!facility) {
+    res.status(403);
+    throw new Error("No access to facility");
+  }
+
+  const nextUtility = await getAccessibleUtilityAccount(
+    req.user,
+    nextUtilityId,
+  );
+
+  if (!nextUtility) {
+    res.status(403);
+    throw new Error("No access to utility");
+  }
+
+  if (nextUtility.facility_id.toString() !== String(nextFacilityId)) {
+    res.status(400);
+    throw new Error("Utility does not belong to selected facility");
+  }
+
+  const updatedFields = Object.keys(req.body || {});
+
   let payload = { ...record.toObject(), ...req.body };
   payload = computeValues(payload);
 
@@ -243,9 +303,30 @@ const updateLightingAuditRecord = asyncHandler(async (req, res) => {
 
   if (docs.length > 0) {
     record.documents.push(...docs);
+    updatedFields.push("documents");
   }
 
   const updated = await record.save();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "lighting_audit",
+    entity_id: updated._id,
+    entity_name:
+      updated.area_location || updated.fixture_type || "Lighting Audit",
+    facility_id: updated.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "lighting audit",
+      entityName: updated.area_location || updated.fixture_type || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+    },
+  });
 
   res.json({
     success: true,
@@ -274,7 +355,28 @@ const deleteLightingAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName =
+    record.area_location || record.fixture_type || "Lighting Audit";
+  const facilityId = record.facility_id;
+  const utilityId = record.utility_account_id;
+
   await record.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "lighting_audit",
+    entity_id: record._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "lighting audit",
+      entityName,
+    }),
+  });
 
   res.json({
     success: true,

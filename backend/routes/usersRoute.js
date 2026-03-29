@@ -9,12 +9,13 @@ import {
   updateUser,
   deleteUser,
 } from "../controllers/usersController.js";
+import { authRateLimiter } from "../middlewares/rateLimitLoggerMiddleware.js";
 
 const router = express.Router();
 
 // 🔐 Auth
-router.post("/register", registerUser);
-router.post("/login", loginUser);
+router.post("/register", authRateLimiter, registerUser);
+router.post("/login", authRateLimiter, loginUser);
 router.post("/logout", protect, userLogout);
 
 // 👤 Profile

@@ -5,6 +5,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -178,6 +180,29 @@ const createPumpAuditRecord = asyncHandler(async (req, res) => {
     documents: uploadedDocuments,
     audit_date,
     auditor_id,
+  });
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "pump_audit",
+    entity_id: pumpAuditRecord._id,
+    entity_name: pump.pump_tag_number || "Pump Audit",
+    facility_id: pumpAuditRecord.facility_id,
+    utility_account_id: pumpAuditRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "pump audit",
+      entityName: pump.pump_tag_number || "",
+    }),
+    meta: {
+      pump_id: pumpAuditRecord.pump_id,
+      actual_flow_m3_per_hr: pumpAuditRecord.actual_flow_m3_per_hr,
+      input_power_kW: pumpAuditRecord.input_power_kW,
+      overall_pump_set_efficiency_percent:
+        pumpAuditRecord.overall_pump_set_efficiency_percent,
+    },
   });
 
   res.status(201).json({
@@ -354,6 +379,7 @@ const updatePumpAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("pump_id does not belong to the given facility_id");
   }
 
+  const updatedFields = Object.keys(req.body || {});
   const uploadedDocuments = await uploadPumpAuditDocuments(req.files);
 
   Object.keys(req.body).forEach((key) => {
@@ -362,9 +388,33 @@ const updatePumpAuditRecord = asyncHandler(async (req, res) => {
 
   if (uploadedDocuments.length > 0) {
     record.documents = [...(record.documents || []), ...uploadedDocuments];
+    updatedFields.push("documents");
   }
 
   const updatedRecord = await record.save();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "pump_audit",
+    entity_id: updatedRecord._id,
+    entity_name: newPump.pump_tag_number || "Pump Audit",
+    facility_id: updatedRecord.facility_id,
+    utility_account_id: updatedRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "pump audit",
+      entityName: newPump.pump_tag_number || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      actual_flow_m3_per_hr: updatedRecord.actual_flow_m3_per_hr,
+      input_power_kW: updatedRecord.input_power_kW,
+      overall_pump_set_efficiency_percent:
+        updatedRecord.overall_pump_set_efficiency_percent,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -394,7 +444,29 @@ const deletePumpAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const pump = await Pump.findById(record.pump_id);
+
+  const entityName = pump?.pump_tag_number || "Pump Audit";
+  const facilityId = record.facility_id;
+  const utilityId = record.utility_account_id;
+
   await record.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "pump_audit",
+    entity_id: record._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "pump audit",
+      entityName,
+    }),
+  });
 
   res.status(200).json({
     success: true,

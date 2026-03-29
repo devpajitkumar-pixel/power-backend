@@ -5,6 +5,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -214,7 +216,26 @@ const createDGAuditRecord = asyncHandler(async (req, res) => {
     auditor_id,
     documents: uploadedDocuments,
   });
-
+  // ✅ Recent Activity
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "dg_set",
+    entity_id: dgAuditRecord._id,
+    entity_name: dgAuditRecord.dg_set_id?.toString() || "DG Audit",
+    facility_id: dgAuditRecord.facility_id,
+    utility_account_id: dgAuditRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "DG audit",
+      entityName: dgAuditRecord.dg_set_id?.toString() || "",
+    }),
+    meta: {
+      measured_kW_output: dgAuditRecord.measured_kW_output,
+      dg_cost_per_kWh_rs: dgAuditRecord.dg_cost_per_kWh_rs,
+    },
+  });
   res.status(201).json({
     success: true,
     message: "DG audit record created successfully",
@@ -419,6 +440,26 @@ const updateDGAuditRecord = asyncHandler(async (req, res) => {
 
   const updated = await dgAuditRecord.save();
 
+  // ✅ Recent Activity
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "dg_set",
+    entity_id: updated._id,
+    entity_name: updated.dg_set_id?.toString() || "DG Audit",
+    facility_id: updated.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "DG audit",
+      entityName: updated.dg_set_id?.toString() || "",
+    }),
+    meta: {
+      updated_fields: Object.keys(req.body || {}),
+    },
+  });
+
   res.status(200).json({
     success: true,
     message: "DG audit record updated successfully",
@@ -447,7 +488,29 @@ const deleteDGAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  // store before delete
+  const name = dgAuditRecord.dg_set_id?.toString() || "DG Audit";
+  const facilityId = dgAuditRecord.facility_id;
+  const utilityId = dgAuditRecord.utility_account_id;
+
   await dgAuditRecord.deleteOne();
+
+  // ✅ Recent Activity
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "dg_set",
+    entity_id: dgAuditRecord._id,
+    entity_name: name,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "DG audit",
+      entityName: name,
+    }),
+  });
 
   res.status(200).json({
     success: true,

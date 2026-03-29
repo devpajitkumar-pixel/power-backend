@@ -4,6 +4,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -78,7 +80,7 @@ const computeValues = (data) => {
   const loadFactorPercent = Number(data.load_factor_percent);
 
   const loadFactor =
-    !isNaN(loadFactorPercent) && loadFactorPercent >= 0
+    !Number.isNaN(loadFactorPercent) && loadFactorPercent >= 0
       ? loadFactorPercent / 100
       : 1;
 
@@ -134,6 +136,28 @@ const createMiscLoadAuditRecord = asyncHandler(async (req, res) => {
     documents: docs,
   });
 
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "misc_load",
+    entity_id: record._id,
+    entity_name: record.equipment_name || record.category || "Misc Load Audit",
+    facility_id: record.facility_id,
+    utility_account_id: record.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "misc load audit",
+      entityName: record.equipment_name || record.category || "",
+    }),
+    meta: {
+      category: record.category,
+      quantity: record.quantity,
+      rated_power_kW: record.rated_power_kW,
+      estimated_annual_energy_kWh: record.estimated_annual_energy_kWh,
+    },
+  });
+
   res.status(201).json({
     success: true,
     data: record,
@@ -146,7 +170,7 @@ const createMiscLoadAuditRecord = asyncHandler(async (req, res) => {
 const getMiscLoadAuditRecords = asyncHandler(async (req, res) => {
   const { facility_id, utility_account_id, category } = req.query;
 
-  let query = {};
+  const query = {};
 
   if (facility_id) query.facility_id = facility_id;
   if (utility_account_id) query.utility_account_id = utility_account_id;
@@ -290,6 +314,8 @@ const updateMiscLoadAuditRecord = asyncHandler(async (req, res) => {
     }
   }
 
+  const updatedFields = Object.keys(req.body || {});
+
   let payload = { ...record.toObject(), ...req.body };
   payload = computeValues(payload);
 
@@ -299,9 +325,31 @@ const updateMiscLoadAuditRecord = asyncHandler(async (req, res) => {
 
   if (docs.length > 0) {
     record.documents.push(...docs);
+    updatedFields.push("documents");
   }
 
   const updated = await record.save();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "misc_load",
+    entity_id: updated._id,
+    entity_name:
+      updated.equipment_name || updated.category || "Misc Load Audit",
+    facility_id: updated.facility_id,
+    utility_account_id: updated.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "misc load audit",
+      entityName: updated.equipment_name || updated.category || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      estimated_annual_energy_kWh: updated.estimated_annual_energy_kWh,
+    },
+  });
 
   res.json({
     success: true,
@@ -330,7 +378,28 @@ const deleteMiscLoadAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const entityName =
+    record.equipment_name || record.category || "Misc Load Audit";
+  const facilityId = record.facility_id;
+  const utilityId = record.utility_account_id;
+
   await record.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "misc_load",
+    entity_id: record._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "misc load audit",
+      entityName,
+    }),
+  });
 
   res.json({
     success: true,

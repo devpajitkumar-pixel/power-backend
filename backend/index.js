@@ -7,6 +7,14 @@ import http from "http";
 import { Server } from "socket.io";
 
 import connectDB from "./config/db.js";
+
+import {
+  apiRateLimiter,
+  authRateLimiter,
+} from "./middlewares/rateLimitLoggerMiddleware.js";
+
+import requestContextMiddleware from "./middlewares/requestContextMiddleware.js";
+import requestLoggerMiddleware from "./middlewares/requestLoggerMiddleware.js";
 import { notFound, errorHandler } from "./middlewares/errorHandler.js";
 
 import usersRoute from "./routes/usersRoute.js";
@@ -26,6 +34,12 @@ import solarGenerationRecordRoutes from "./routes/solarGenerationRecordRoutes.js
 import dgAuditRecordRoutes from "./routes/dgAuditRecordRoutes.js";
 import transformerAuditRecordRoutes from "./routes/transformerAuditRecordRoutes.js";
 import pumpAuditRecordRoutes from "./routes/pumpAuditRecordRoutes.js";
+import acAuditRecordRoutes from "./routes/acAuditRecordRoutes.js";
+import fanAuditRecordRoutes from "./routes/fanAuditRecordRoutes.js";
+import reportRoutes from "./routes/reportRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js";
+import analyticsRoutes from "./routes/analyticsRoutes.js";
+import userProfileRoutes from "./routes/userProfileRoutes.js";
 
 import adminRoutes from "./routes/adminRoutes.js";
 import emailRoutes from "./routes/emailRoutes.js";
@@ -58,11 +72,17 @@ app.use(
 
 app.options(/.*/, cors());
 
+app.use(requestContextMiddleware);
+app.use(requestLoggerMiddleware);
+
 /* ---------------- ROUTES ---------------- */
 
 app.get("/", (req, res) => {
   res.send("Welcome to Power DB Server.");
 });
+
+// general limiter for all API routes
+app.use("/api", apiRateLimiter);
 
 app.use("/api/v1/email", emailRoutes);
 
@@ -83,6 +103,12 @@ app.use("/api/v1/solar-generation-records", solarGenerationRecordRoutes);
 app.use("/api/v1/dg-audit-records", dgAuditRecordRoutes);
 app.use("/api/v1/transformer-audit-records", transformerAuditRecordRoutes);
 app.use("/api/v1/pump-audit-records", pumpAuditRecordRoutes);
+app.use("/api/v1/ac-audit-records", acAuditRecordRoutes);
+app.use("/api/v1/fan-audit-records", fanAuditRecordRoutes);
+app.use("/api/v1/reports", reportRoutes);
+app.use("/api/v1/dashboard", dashboardRoutes);
+app.use("/api/v1/analytics", analyticsRoutes);
+app.use("/api/v1/user", userProfileRoutes);
 
 app.use("/api/v1/admin/users", adminRoutes);
 

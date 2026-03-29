@@ -5,6 +5,8 @@ import UtilityAccount from "../modals/utilityAccount.js";
 import Facility from "../modals/facility.js";
 import FacilityAuditor from "../modals/facilityAuditor.js";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
+import { createRecentActivity } from "../helpers/createRecentActivity.js";
+import { buildActivityMessage } from "../helpers/buildActivityMessage.js";
 
 // 🔐 Admin check
 const isAdmin = (user) => user?.role === "admin";
@@ -196,6 +198,28 @@ const createTransformerAuditRecord = asyncHandler(async (req, res) => {
     documents: uploadedDocuments,
   });
 
+  await createRecentActivity({
+    actor: req.user,
+    action: "created",
+    entity_type: "transformer_audit",
+    entity_id: transformerAuditRecord._id,
+    entity_name: transformer.transformer_tag || "Transformer Audit",
+    facility_id: transformerAuditRecord.facility_id,
+    utility_account_id: transformerAuditRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "created",
+      entityLabel: "transformer audit",
+      entityName: transformer.transformer_tag || "",
+    }),
+    meta: {
+      transformer_id: transformerAuditRecord.transformer_id,
+      total_losses_kW: transformerAuditRecord.total_losses_kW,
+      average_load_kVA: transformerAuditRecord.average_load_kVA,
+      percent_loading: transformerAuditRecord.percent_loading,
+    },
+  });
+
   res.status(201).json({
     success: true,
     message: "Transformer audit record created successfully",
@@ -377,6 +401,7 @@ const updateTransformerAuditRecord = asyncHandler(async (req, res) => {
     );
   }
 
+  const updatedFields = Object.keys(req.body || {});
   const uploadedDocuments = await uploadTransformerAuditDocuments(req.files);
 
   Object.keys(req.body).forEach((key) => {
@@ -388,9 +413,33 @@ const updateTransformerAuditRecord = asyncHandler(async (req, res) => {
       ...(transformerAuditRecord.documents || []),
       ...uploadedDocuments,
     ];
+    updatedFields.push("documents");
   }
 
   const updatedTransformerAuditRecord = await transformerAuditRecord.save();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "updated",
+    entity_type: "transformer_audit",
+    entity_id: updatedTransformerAuditRecord._id,
+    entity_name: transformer.transformer_tag || "Transformer Audit",
+    facility_id: updatedTransformerAuditRecord.facility_id,
+    utility_account_id: updatedTransformerAuditRecord.utility_account_id,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "updated",
+      entityLabel: "transformer audit",
+      entityName: transformer.transformer_tag || "",
+    }),
+    meta: {
+      updated_fields: [...new Set(updatedFields)],
+      transformer_id: updatedTransformerAuditRecord.transformer_id,
+      total_losses_kW: updatedTransformerAuditRecord.total_losses_kW,
+      average_load_kVA: updatedTransformerAuditRecord.average_load_kVA,
+      percent_loading: updatedTransformerAuditRecord.percent_loading,
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -422,7 +471,39 @@ const deleteTransformerAuditRecord = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
+  const transformer = await Transformer.findById(
+    transformerAuditRecord.transformer_id,
+  );
+
+  const entityName = transformer?.transformer_tag || "Transformer Audit";
+  const facilityId = transformerAuditRecord.facility_id;
+  const utilityId = transformerAuditRecord.utility_account_id;
+  const totalLosses = transformerAuditRecord.total_losses_kW;
+  const averageLoad = transformerAuditRecord.average_load_kVA;
+  const percentLoading = transformerAuditRecord.percent_loading;
+
   await transformerAuditRecord.deleteOne();
+
+  await createRecentActivity({
+    actor: req.user,
+    action: "deleted",
+    entity_type: "transformer_audit",
+    entity_id: transformerAuditRecord._id,
+    entity_name: entityName,
+    facility_id: facilityId,
+    utility_account_id: utilityId,
+    message: buildActivityMessage({
+      actorName: req.user?.name || "User",
+      action: "deleted",
+      entityLabel: "transformer audit",
+      entityName,
+    }),
+    meta: {
+      total_losses_kW: totalLosses,
+      average_load_kVA: averageLoad,
+      percent_loading: percentLoading,
+    },
+  });
 
   res.status(200).json({
     success: true,
